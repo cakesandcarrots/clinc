@@ -1,11 +1,10 @@
 import bcrypt from 'bcryptjs';
 import Patient from '../models/patient.js';
-
+import Availability from '../models/availabilityModel.js';
 // Registration Logic
 export const registerPatient = async (req, res) => {
   try {
     const { name, email, password, gender, age } = req.body;
-console.log(req.body);
     // Hash the password before saving
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -25,17 +24,14 @@ console.log(req.body);
 export const loginPatient = async (req, res) => {
   try {
     const { email, password } = req.body;
-console.log(req.body)
     // Find the patient by email
     const patient = await Patient.findOne({ email });
-console.log(patient)
     if (!patient) {
       return res.status(400).json({ message: 'Invalid email or password' });
     }
 
     // Compare the provided password with the stored hashed password
     const isMatch = await bcrypt.compare(password, patient.password);
-    console.log(isMatch)
 
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid email or password' });
@@ -74,8 +70,12 @@ export const logoutPatient = (req, res) => {
 export const bookAppointment = async (req, res) => {
   try {
     const { patientEmail, date, timeSlot } = req.body;
-
+    console.log(patientEmail);
+    
+    // Use `email` field from schema instead of `patientEmail`
     const patient = await Patient.findOne({ email: patientEmail });
+    console.log(patient);
+
     if (!patient) {
       return res.status(404).json({ message: 'Patient not found' });
     }
@@ -103,6 +103,7 @@ export const bookAppointment = async (req, res) => {
     res.status(500).json({ message: 'Error booking appointment', error: error.message });
   }
 };
+
 
 export const getBookedSlots = async (req, res) => {
   try {
@@ -149,5 +150,138 @@ export const checkPatientAppointment = async (req, res) => {
     res.status(200).json({ hasAppointment, appointment });
   } catch (error) {
     res.status(500).json({ message: 'Error checking appointment', error: error.message });
+  }
+};
+
+
+export const getAllPatients = async (req, res) => {
+  try {
+    const patients = await Patient.find().select('-password');
+    res.status(200).json(patients);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getPatientById = async (req, res) => {
+  try {
+    console.log("Hi")
+    const patient = await Patient.findById(req.params.id).select('-password');
+    console.log(patient)
+    if (!patient) {
+      return res.status(404).json({ message: 'Patient not found' });
+    }
+    res.status(200).json(patient);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
+
+
+export const getPatients = async (req, res) => {
+  try {
+    const patients = await Patient.find({}, 'name email appointments');
+    res.json(patients);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updatePatientStatus = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { status } = req.body;
+
+    const patient = await Patient.findById(patientId);
+    if (!patient) {
+      return res.status(404).json({ message: 'Patient not found' });
+    }
+
+    // Update the patient’s status directly
+    patient.status = status;
+    await patient.save();
+
+    res.json(patient);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+
+
+export const getAvailability = async (req, res) => {
+  try {
+    const availability = await Availability.findOne();
+    // Format the dates before sending them to the frontend
+    const formattedDates = availability ? 
+      availability.availableDates.map(date => {
+        const d = new Date(date);
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        return d.toISOString().split('T')[0];
+      }) : [];
+    
+    res.json({ availableDates: formattedDates });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching availability', error: error.message });
+  }
+};
+
+// Update Availability
+export const updateAvailability = async (req, res) => {
+  try {
+    const { availableDates } = req.body;
+    
+    // Format the incoming dates to ensure consistency
+    const formattedDates = availableDates.map(date => {
+      const d = new Date(date);
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+      return d.toISOString().split('T')[0];
+    });
+
+    let availability = await Availability.findOne();
+
+    if (availability) {
+      availability.availableDates = formattedDates;
+      await availability.save();
+    } else {
+      availability = new Availability({ availableDates: formattedDates });
+      await availability.save();
+    }
+
+    res.json({ 
+      message: 'Availability updated successfully', 
+      availableDates: availability.availableDates.map(date => {
+        const d = new Date(date);
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        return d.toISOString().split('T')[0];
+      })
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating availability', error: error.message });
+  }
+};
+
+
+export const getAvailableDays = async (req, res) => {
+  try {
+      // Find the availability document
+      const availability = await Availability.findOne();
+      
+      if (!availability || !availability.availableDates) {
+          return res.status(404).json({ message: 'No available dates found' });
+      }
+
+      // Simply map the dates to the expected format
+      const availableDates = availability.availableDates.map(date => ({
+          date: date
+      }));
+console.log(availability)
+      res.status(200).json(availableDates);
+
+  } catch (error) {
+      console.error('Error fetching available days:', error);
+      res.status(500).json({ message: 'Internal server error' });
   }
 };
